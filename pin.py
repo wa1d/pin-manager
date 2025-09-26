@@ -45,6 +45,12 @@ from typing import Dict, List, Optional, Tuple
 
 import requests  # pyright: ignore[reportMissingModuleSource]
 
+# Import track selection functionality
+try:
+    from track_select import track_select
+except ImportError:
+    track_select = None
+
 def load_env_file():
     """Load environment variables from .env file if it exists."""
     env_file = Path(".env")
@@ -412,35 +418,19 @@ def cmd_pin_list(args):
         print(f"No pins for playlist '{playlist_name}'.")
         return
     
-    # Get track info from Spotify
-    sp = SpotifyClient()
     print(f"Pins for playlist: {config.get('playlist_display_name', playlist_name)}")
-    print("#  pos  track_id                                    track_name")
+    print("#  pos  track_name")
     print("-" * 80)
     
     for i, p in enumerate(pins, 1):
-        track_id = normalize_track_id(p['track_id'])
         position = int(p['position'])
+        track_name = p.get('track_name', 'Unknown Track')
         
-        # Extract track ID for API call
-        track_spotify_id = track_id.split(":")[-1]
+        # Truncate long names
+        if len(track_name) > 70:
+            track_name = track_name[:67] + "..."
         
-        try:
-            # Get track info from Spotify
-            resp = sp._req("GET", f"/tracks/{track_spotify_id}")
-            if resp.status_code == 200:
-                track_data = resp.json()
-                track_name = track_data.get("name", "Unknown")
-                artists = ", ".join([artist["name"] for artist in track_data.get("artists", [])])
-                full_name = f"{track_name} - {artists}" if artists else track_name
-                # Truncate long names
-                if len(full_name) > 40:
-                    full_name = full_name[:37] + "..."
-                print(f"{i:2d} {position:4d} {track_id:<40} {full_name}")
-            else:
-                print(f"{i:2d} {position:4d} {track_id:<40} [Error fetching track info]")
-        except Exception as e:
-            print(f"{i:2d} {position:4d} {track_id:<40} [Error: {str(e)[:20]}...]")
+        print(f"{i:2d} {position:4d} {track_name}")
 
 def cmd_pin_add(args):
     # Determine which playlist to use
@@ -475,12 +465,28 @@ def cmd_pin_add(args):
         # replace mode: remove previous PIN at this position
         pins = [p for p in pins if int(p["position"]) != int(pos)]
 
+    # Get track name from Spotify
+    sp = SpotifyClient()
+    track_spotify_id = uri.split(":")[-1]
+    try:
+        resp = sp._req("GET", f"/tracks/{track_spotify_id}")
+        if resp.status_code == 200:
+            track_data = resp.json()
+            track_name = track_data.get("name", "Unknown")
+            artists = ", ".join([artist["name"] for artist in track_data.get("artists", [])])
+            full_track_name = f"{track_name} - {artists}" if artists else track_name
+        else:
+            full_track_name = "Unknown Track"
+    except Exception:
+        full_track_name = "Unknown Track"
+
     # if PIN already exists for this track — update position
     existed = next((p for p in pins if normalize_track_id(p["track_id"]) == uri), None)
     if existed:
         existed["position"] = int(pos)
+        existed["track_name"] = full_track_name
     else:
-        pins.append({"track_id": uri, "position": int(pos)})
+        pins.append({"track_id": uri, "position": int(pos), "track_name": full_track_name})
 
     config["pins"] = pins
     save_playlist_config(playlist_name, config)
@@ -551,6 +557,23 @@ def cmd_pin_move(args):
         pins = [p for p in pins if p is not conflict]
 
     pin["position"] = int(pos)
+    # Ensure track_name is preserved
+    if "track_name" not in pin:
+        # Get track name from Spotify if missing
+        sp = SpotifyClient()
+        track_spotify_id = uri.split(":")[-1]
+        try:
+            resp = sp._req("GET", f"/tracks/{track_spotify_id}")
+            if resp.status_code == 200:
+                track_data = resp.json()
+                track_name = track_data.get("name", "Unknown")
+                artists = ", ".join([artist["name"] for artist in track_data.get("artists", [])])
+                pin["track_name"] = f"{track_name} - {artists}" if artists else track_name
+            else:
+                pin["track_name"] = "Unknown Track"
+        except Exception:
+            pin["track_name"] = "Unknown Track"
+    
     config["pins"] = pins
     save_playlist_config(playlist_name, config)
     print(f"✅ Moved PIN: {uri} → position {pos}")
@@ -782,6 +805,29 @@ def cmd_select_playlist(args):
     print(f"   Display name: {playlist_name}")
     print(f"   Config file: config_{safe_name}.json")
 
+def cmd_track_select(args):
+    """Interactive track selection for pinning."""
+    if track_select is None:
+        die("Track selection module not available. Make sure track_select.py is in the same directory.")
+    
+    # Determine which playlist to use
+    if args.playlist:
+        playlist_name = args.playlist
+    else:
+        # Use default playlist
+        registry = load_playlists_registry()
+        if not registry["default"]:
+            die("No default playlist set. Create one with 'playlist-create' or specify --playlist.")
+        playlist_name = registry["default"]
+    
+    # Check if playlist exists
+    config = load_playlist_config(playlist_name)
+    if not config.get("playlist_id"):
+        die(f"Playlist '{playlist_name}' not found. Create it first with 'playlist-create'.")
+    
+    # Start interactive track selection
+    track_select(playlist_name)
+
 # ---------- main ----------
 
 def build_parser():
@@ -831,6 +877,11 @@ def build_parser():
 
     sp_delete = sub.add_parser("playlist-delete", help="Delete playlist configuration")
     sp_delete.set_defaults(func=cmd_playlist_delete)
+
+    # Track selection command
+    sp_track_select = sub.add_parser("track-select", help="Interactive track selection for pinning")
+    sp_track_select.add_argument("--playlist", help="Playlist name (if not set — default)")
+    sp_track_select.set_defaults(func=cmd_track_select)
 
     return p
 

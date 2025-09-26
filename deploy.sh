@@ -49,14 +49,10 @@ mkdir -p "$LOG_DIR"
 if [ -d "$APP_DIR/.git" ]; then
     echo -e "${YELLOW}🔄 Updating existing repository...${NC}"
     cd "$APP_DIR"
-    git pull origin main
+    git pull origin master
 else
     echo -e "${YELLOW}📥 Cloning repository...${NC}"
-    # Note: You'll need to replace this with your actual repository URL
-    echo -e "${RED}❌ Please update this script with your Git repository URL${NC}"
-    echo -e "${YELLOW}Edit deploy.sh and replace the git clone command with your repository URL${NC}"
-    exit 1
-    # git clone https://github.com/yourusername/spotify-playlist-manager.git "$APP_DIR"
+    git clone https://github.com/wa1d/pin-manager.git "$APP_DIR"
 fi
 
 # Set up Python virtual environment

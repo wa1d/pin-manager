@@ -24,8 +24,8 @@ git add .
 # Create initial commit
 git commit -m "Initial commit: Spotify Playlist Manager"
 
-# Add remote repository (replace with your actual repository URL)
-git remote add origin https://github.com/yourusername/spotify-playlist-manager.git
+# Add remote repository
+git remote add origin https://github.com/wa1d/pin-manager.git
 
 # Push to remote
 git push -u origin main
@@ -43,7 +43,7 @@ ssh user@your-server-ip
 
 ```bash
 # Download the deployment script
-wget https://raw.githubusercontent.com/yourusername/spotify-playlist-manager/main/deploy.sh
+wget https://raw.githubusercontent.com/wa1d/pin-manager/master/deploy.sh
 
 # Make it executable
 chmod +x deploy.sh
@@ -129,7 +129,7 @@ sudo useradd -r -s /bin/false -d /opt/spotify-playlist-manager spotify-pins
 
 ```bash
 sudo mkdir -p /opt/spotify-playlist-manager
-sudo git clone https://github.com/yourusername/spotify-playlist-manager.git /opt/spotify-playlist-manager
+sudo git clone https://github.com/wa1d/pin-manager.git /opt/spotify-playlist-manager
 ```
 
 ### 4. Set Up Python Environment

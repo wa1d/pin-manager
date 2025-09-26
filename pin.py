@@ -45,6 +45,20 @@ from typing import Dict, List, Optional, Tuple
 
 import requests  # pyright: ignore[reportMissingModuleSource]
 
+def load_env_file():
+    """Load environment variables from .env file if it exists."""
+    env_file = Path(".env")
+    if env_file.exists():
+        with env_file.open("r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    key, value = line.split("=", 1)
+                    os.environ[key.strip()] = value.strip()
+
+# Load environment variables from .env file
+load_env_file()
+
 PLAYLISTS_REGISTRY = Path("playlists.json")
 DEFAULT_LOG_PATH = os.environ.get("SPOTIFY_PINS_LOG", "spotify_pins.log")
 

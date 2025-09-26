@@ -51,6 +51,12 @@ try:
 except ImportError:
     track_select = None
 
+# Import track search functionality
+try:
+    from track_search import track_search
+except ImportError:
+    track_search = None
+
 def load_env_file():
     """Load environment variables from .env file if it exists."""
     env_file = Path(".env")
@@ -70,15 +76,21 @@ DEFAULT_LOG_PATH = os.environ.get("SPOTIFY_PINS_LOG", "spotify_pins.log")
 
 # ---------- Logging ----------
 logger = logging.getLogger("spotify_pins")
-logger.setLevel(logging.INFO)
-handler = logging.FileHandler(DEFAULT_LOG_PATH, encoding='utf-8')
-handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
-logger.addHandler(handler)
 
-console = logging.StreamHandler(sys.stdout)
-console.setFormatter(logging.Formatter("%(message)s"))
-console.setLevel(logging.INFO)
-logger.addHandler(console)
+# Only set up handlers if they haven't been set up already
+if not logger.handlers:
+    logger.setLevel(logging.INFO)
+
+    # File handler for logging to file
+    file_handler = logging.FileHandler(DEFAULT_LOG_PATH, encoding='utf-8')
+    file_handler.setFormatter(logging.Formatter("%(asctime)s [%(levelname)s] %(message)s"))
+    logger.addHandler(file_handler)
+
+    # Console handler for logging to stdout
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setFormatter(logging.Formatter("%(message)s"))
+    console_handler.setLevel(logging.INFO)
+    logger.addHandler(console_handler)
 
 # ---------- Utilities ----------
 
@@ -344,26 +356,25 @@ def sync_playlist_new(sp: SpotifyClient, config: Dict):
     # 1) remove duplicates (exactly one copy of each track in the end)
     ensure_no_duplicates(sp, playlist_id)
 
-    # 2) current state
-    items, snapshot = sp.get_playlist_items(playlist_id)
-    uris = [it["uri"] for it in items]
-
-    # helper: find track index (first occurrence) or None
-    def find_index(uri: str) -> Optional[int]:
-        try:
-            return uris.index(uri)
-        except ValueError:
-            return None
-
-    # 3) go through pins in ascending position order
+    # 2) go through pins in ascending position order
     pins = sorted(config.get("pins", []), key=lambda p: int(p["position"]))
     for pin in pins:
         uri = normalize_track_id(pin["track_id"])
         target_pos_1based = int(pin["position"])
-        # convert to 0-based insert_before
-        # In Spotify reorder/add insertion position — 0-based index (insert_before)
-        insert_before = max(0, target_pos_1based - 1)
+        
+        # Get current playlist state (refresh after each modification)
+        items, snapshot = sp.get_playlist_items(playlist_id)
+        uris = [it["uri"] for it in items]
+        
+        # helper: find track index (first occurrence) or None
+        def find_index(uri: str) -> Optional[int]:
+            try:
+                return uris.index(uri)
+            except ValueError:
+                return None
 
+        # convert to 0-based insert_before
+        insert_before = max(0, target_pos_1based - 1)
         current_idx = find_index(uri)
         n = len(uris)
 
@@ -374,7 +385,6 @@ def sync_playlist_new(sp: SpotifyClient, config: Dict):
         if current_idx is None:
             # not in playlist -> add
             snapshot = sp.add_tracks(playlist_id, [uri], position=insert_before if insert_before <= n else None)
-            uris.insert(insert_before if insert_before <= n else n, uri)
             logger.info("insert: %s -> pos %d", uri, (insert_before + 1 if insert_before <= n else n + 1))
         else:
             # already exists: if not in right place — move
@@ -382,11 +392,6 @@ def sync_playlist_new(sp: SpotifyClient, config: Dict):
             if current_idx != desired_idx:
                 # In Spotify reorder: range_start=current_idx, insert_before=desired_idx, range_length=1
                 snapshot = sp.reorder(playlist_id, range_start=current_idx, insert_before=desired_idx, range_length=1, snapshot_id=snapshot)
-                # locally update list
-                moved_uri = uris.pop(current_idx)
-                if desired_idx > current_idx:
-                    desired_idx -= 1  # after pop indices shifted
-                uris.insert(desired_idx, moved_uri)
                 logger.info("move: %s %d -> %d", uri, current_idx + 1, desired_idx + 1)
             else:
                 logger.info("skip: %s already at position %d", uri, current_idx + 1)
@@ -828,6 +833,29 @@ def cmd_track_select(args):
     # Start interactive track selection
     track_select(playlist_name)
 
+def cmd_track_search(args):
+    """Interactive track search and pinning."""
+    if track_search is None:
+        die("Track search module not available. Make sure track_search.py is in the same directory.")
+    
+    # Determine which playlist to use
+    if args.playlist:
+        playlist_name = args.playlist
+    else:
+        # Use default playlist
+        registry = load_playlists_registry()
+        if not registry["default"]:
+            die("No default playlist set. Create one with 'playlist-create' or specify --playlist.")
+        playlist_name = registry["default"]
+    
+    # Check if playlist exists
+    config = load_playlist_config(playlist_name)
+    if not config.get("playlist_id"):
+        die(f"Playlist '{playlist_name}' not found. Create it first with 'playlist-create'.")
+    
+    # Start interactive track search
+    track_search(playlist_name)
+
 # ---------- main ----------
 
 def build_parser():
@@ -882,6 +910,11 @@ def build_parser():
     sp_track_select = sub.add_parser("track-select", help="Interactive track selection for pinning")
     sp_track_select.add_argument("--playlist", help="Playlist name (if not set — default)")
     sp_track_select.set_defaults(func=cmd_track_select)
+
+    # Track search command
+    sp_track_search = sub.add_parser("track-search", help="Search Spotify tracks and pin them")
+    sp_track_search.add_argument("--playlist", help="Playlist name (if not set — default)")
+    sp_track_search.set_defaults(func=cmd_track_search)
 
     return p
 

@@ -150,6 +150,10 @@ def load_playlist_config(playlist_name: str) -> Dict:
 
 def save_playlist_config(playlist_name: str, config: Dict):
     """Save configuration for a specific playlist."""
+    # Sort pins by position before saving
+    if "pins" in config and config["pins"]:
+        config["pins"] = sorted(config["pins"], key=lambda pin: int(pin.get("position", 0)))
+    
     config_path = get_playlist_config_path(playlist_name)
     with config_path.open("w", encoding="utf-8") as f:
         json.dump(config, f, ensure_ascii=False, indent=2)
@@ -889,6 +893,78 @@ def cmd_export_csv(args):
     if not success:
         die("CSV export failed.")
 
+def cmd_sort_pins(args):
+    """Sort pins by position in playlist configuration(s)."""
+    if args.all:
+        # Sort all managed playlists
+        registry = load_playlists_registry()
+        playlists = registry.get("playlists", {})
+        
+        if not playlists:
+            print("No managed playlists found.")
+            return
+        
+        print(f"🔧 Sorting pins for {len(playlists)} playlists...")
+        
+        for playlist_name, playlist_info in playlists.items():
+            config = load_playlist_config(playlist_name)
+            pins = config.get("pins", [])
+            
+            if not pins:
+                print(f"  {playlist_name}: No pins to sort")
+                continue
+            
+            # Sort pins by position
+            original_positions = [pin.get("position", 0) for pin in pins]
+            config["pins"] = sorted(pins, key=lambda pin: int(pin.get("position", 0)))
+            save_playlist_config(playlist_name, config)
+            
+            sorted_positions = [pin.get("position", 0) for pin in config["pins"]]
+            if original_positions != sorted_positions:
+                print(f"  ✅ {playlist_name}: Sorted {len(pins)} pins")
+            else:
+                print(f"  📋 {playlist_name}: Already sorted")
+        
+        print("🎉 All playlist pins sorted!")
+        
+    else:
+        # Sort specific playlist or default
+        if args.playlist:
+            playlist_name = args.playlist
+        else:
+            # Use default playlist
+            registry = load_playlists_registry()
+            if not registry["default"]:
+                die("No default playlist set. Create one with 'playlist-create' or specify --playlist.")
+            playlist_name = registry["default"]
+        
+        # Check if playlist exists
+        config = load_playlist_config(playlist_name)
+        if not config.get("playlist_id"):
+            die(f"Playlist '{playlist_name}' not found. Create it first with 'playlist-create'.")
+        
+        pins = config.get("pins", [])
+        if not pins:
+            print(f"No pins found for playlist '{playlist_name}'.")
+            return
+        
+        # Show current order
+        print(f"🔧 Sorting pins for playlist: {playlist_name}")
+        print(f"📋 Current order: {[pin.get('position', 0) for pin in pins]}")
+        
+        # Sort pins by position
+        original_positions = [pin.get("position", 0) for pin in pins]
+        config["pins"] = sorted(pins, key=lambda pin: int(pin.get("position", 0)))
+        save_playlist_config(playlist_name, config)
+        
+        sorted_positions = [pin.get("position", 0) for pin in config["pins"]]
+        print(f"✅ Sorted order: {sorted_positions}")
+        
+        if original_positions != sorted_positions:
+            print(f"🎉 Successfully sorted {len(pins)} pins by position!")
+        else:
+            print("📋 Pins were already sorted by position.")
+
 # ---------- main ----------
 
 def build_parser():
@@ -954,6 +1030,12 @@ def build_parser():
     sp_export.add_argument("--playlist", help="Playlist name (if not set — default)")
     sp_export.add_argument("--output", help="Output CSV file path (defaults to playlist_name_export.csv)")
     sp_export.set_defaults(func=cmd_export_csv)
+
+    # Sort pins command
+    sp_sort = sub.add_parser("sort-pins", help="Sort pins by position in playlist configuration")
+    sp_sort.add_argument("--playlist", help="Playlist name (if not set — default)")
+    sp_sort.add_argument("--all", action="store_true", help="Sort pins for all managed playlists")
+    sp_sort.set_defaults(func=cmd_sort_pins)
 
     return p
 

@@ -76,6 +76,7 @@ python pin.py sync
 ### Operations
 - `sync` - Apply pins to playlists
 - `export-csv` - Export playlist tracks to CSV format
+- `sort-pins` - Sort pins by position in playlist configuration
 
 ## Examples
 
@@ -97,6 +98,15 @@ python pin.py export-csv --playlist "my_playlist"
 
 # Export with custom output file
 python pin.py export-csv --playlist "my_playlist" --output "my_export.csv"
+
+# Sort pins by position for default playlist
+python pin.py sort-pins
+
+# Sort pins for specific playlist
+python pin.py sort-pins --playlist "my_playlist"
+
+# Sort pins for all managed playlists
+python pin.py sort-pins --all
 ```
 
 ## Server Deployment

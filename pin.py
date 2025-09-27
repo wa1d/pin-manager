@@ -57,6 +57,12 @@ try:
 except ImportError:
     track_search = None
 
+# Import CSV export functionality
+try:
+    from csv_export import export_playlist_to_csv
+except ImportError:
+    export_playlist_to_csv = None
+
 def load_env_file():
     """Load environment variables from .env file if it exists."""
     env_file = Path(".env")
@@ -856,6 +862,33 @@ def cmd_track_search(args):
     # Start interactive track search
     track_search(playlist_name)
 
+def cmd_export_csv(args):
+    """Export playlist tracks to CSV format."""
+    if export_playlist_to_csv is None:
+        die("CSV export module not available. Make sure csv_export.py is in the same directory.")
+    
+    # Determine which playlist to use
+    if args.playlist:
+        playlist_name = args.playlist
+    else:
+        # Use default playlist
+        registry = load_playlists_registry()
+        if not registry["default"]:
+            die("No default playlist set. Create one with 'playlist-create' or specify --playlist.")
+        playlist_name = registry["default"]
+    
+    # Check if playlist exists
+    config = load_playlist_config(playlist_name)
+    if not config.get("playlist_id"):
+        die(f"Playlist '{playlist_name}' not found. Create it first with 'playlist-create'.")
+    
+    # Export to CSV
+    output_file = args.output
+    success = export_playlist_to_csv(playlist_name, output_file)
+    
+    if not success:
+        die("CSV export failed.")
+
 # ---------- main ----------
 
 def build_parser():
@@ -915,6 +948,12 @@ def build_parser():
     sp_track_search = sub.add_parser("track-search", help="Search Spotify tracks and pin them")
     sp_track_search.add_argument("--playlist", help="Playlist name (if not set — default)")
     sp_track_search.set_defaults(func=cmd_track_search)
+
+    # CSV export command
+    sp_export = sub.add_parser("export-csv", help="Export playlist tracks to CSV format")
+    sp_export.add_argument("--playlist", help="Playlist name (if not set — default)")
+    sp_export.add_argument("--output", help="Output CSV file path (defaults to playlist_name_export.csv)")
+    sp_export.set_defaults(func=cmd_export_csv)
 
     return p
 

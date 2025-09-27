@@ -75,6 +75,7 @@ python pin.py sync
 
 ### Operations
 - `sync` - Apply pins to playlists
+- `export-csv` - Export playlist tracks to CSV format
 
 ## Examples
 
@@ -90,6 +91,12 @@ python pin.py sync
 
 # Sync specific playlist
 python pin.py sync --playlist "my_playlist"
+
+# Export playlist to CSV
+python pin.py export-csv --playlist "my_playlist"
+
+# Export with custom output file
+python pin.py export-csv --playlist "my_playlist" --output "my_export.csv"
 ```
 
 ## Server Deployment

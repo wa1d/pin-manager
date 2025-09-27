@@ -58,3 +58,6 @@ Thumbs.db
 # Temporary files
 *.tmp
 *.temp
+
+# CSV export files
+*.csv

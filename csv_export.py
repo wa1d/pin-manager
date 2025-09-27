@@ -18,23 +18,26 @@ from typing import Dict, List, Optional, Tuple
 from pin import SpotifyClient, load_playlist_config, normalize_track_id
 
 
-def get_track_genres(sp: SpotifyClient, track_ids: List[str]) -> Dict[str, List[str]]:
+def get_track_genres(sp: SpotifyClient, track_ids: List[str]) -> Tuple[Dict[str, List[str]], Dict[str, int]]:
     """
-    Get genre information for multiple tracks.
+    Get genre and popularity information for multiple tracks.
     
     Args:
         sp: Spotify client instance
         track_ids: List of track IDs (without spotify:track: prefix)
     
     Returns:
-        Dictionary mapping track IDs to list of genres
+        Tuple of (genres_dict, popularity_dict) where:
+        - genres_dict maps track IDs to list of genres
+        - popularity_dict maps track IDs to popularity scores
     """
     if not track_ids:
-        return {}
+        return {}, {}
     
     # Spotify API allows up to 50 tracks per request
     batch_size = 50
     all_genres = {}
+    all_popularity = {}
     
     for i in range(0, len(track_ids), batch_size):
         batch = track_ids[i:i + batch_size]
@@ -61,7 +64,10 @@ def get_track_genres(sp: SpotifyClient, track_ids: List[str]) -> Dict[str, List[
                     
                 track_id = track.get("id")
                 artists = track.get("artists", [])
+                popularity = track.get("popularity", 0)
+                
                 track_artist_map[track_id] = [artist.get("id") for artist in artists if artist.get("id")]
+                all_popularity[track_id] = popularity
                 artist_ids.update(track_artist_map[track_id])
             
             # Get artist details in batches (50 artists max per request)
@@ -96,10 +102,10 @@ def get_track_genres(sp: SpotifyClient, track_ids: List[str]) -> Dict[str, List[
             print(f"⚠️ Warning: Error getting genres for batch: {e}")
             continue
     
-    return all_genres
+    return all_genres, all_popularity
 
 
-def format_csv_data(tracks: List[Dict], pins: List[Dict], genres: Dict[str, List[str]]) -> List[Dict]:
+def format_csv_data(tracks: List[Dict], pins: List[Dict], genres: Dict[str, List[str]], popularity: Dict[str, int]) -> List[Dict]:
     """
     Format track data for CSV export.
     
@@ -107,6 +113,7 @@ def format_csv_data(tracks: List[Dict], pins: List[Dict], genres: Dict[str, List
         tracks: List of track items from Spotify API
         pins: List of pinned tracks from config
         genres: Dictionary mapping track IDs to genres
+        popularity: Dictionary mapping track IDs to popularity scores
     
     Returns:
         List of formatted track data dictionaries
@@ -124,13 +131,15 @@ def format_csv_data(tracks: List[Dict], pins: List[Dict], genres: Dict[str, List
         track_name = track.get('name', 'Unknown')
         artists = [artist.get('name', '') for artist in track.get('artists', [])]
         artist_name = ', '.join(artists) if artists else 'Unknown Artist'
-        popularity = track.get('popularity', 0)
+        
+        # Get popularity from our separate API call
+        track_id = track.get('id', '')
+        track_popularity = popularity.get(track_id, 0)
         
         # Check if track is pinned
         is_pinned = track_uri in pinned_uris
         
         # Get genre information
-        track_id = track.get('id', '')
         track_genres = genres.get(track_id, [])
         genre_str = ', '.join(track_genres) if track_genres else 'Unknown'
         
@@ -139,7 +148,7 @@ def format_csv_data(tracks: List[Dict], pins: List[Dict], genres: Dict[str, List
         
         formatted_data.append({
             'artist_title': artist_title,
-            'popularity': popularity,
+            'popularity': track_popularity,
             'pinned': 'Yes' if is_pinned else 'No',
             'genre': genre_str
         })
@@ -196,15 +205,16 @@ def export_playlist_to_csv(playlist_name: str, output_file: Optional[str] = None
     track_ids = [tid for tid in track_ids if tid]  # Filter out empty IDs
     
     try:
-        genres = get_track_genres(sp, track_ids)
-        print(f"✅ Retrieved genres for {len(genres)} tracks")
+        genres, popularity_data = get_track_genres(sp, track_ids)
+        print(f"✅ Retrieved genres and popularity for {len(genres)} tracks")
     except Exception as e:
-        print(f"⚠️ Warning: Could not get all genre information: {e}")
+        print(f"⚠️ Warning: Could not get all genre/popularity information: {e}")
         genres = {}
+        popularity_data = {}
     
     # Format data for CSV
     print("📝 Formatting data...")
-    csv_data = format_csv_data(tracks, pins, genres)
+    csv_data = format_csv_data(tracks, pins, genres, popularity_data)
     
     # Determine output file
     if not output_file:
